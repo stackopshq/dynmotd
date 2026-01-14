@@ -8,7 +8,7 @@ Dynamic MOTD (Message of the Day) for Linux distributions with distribution-spec
 
 - **Distribution-specific colors** based on official logo colors
 - **Cloud provider detection**: AWS, Azure, GCP, OpenStack
-- **OS-specific modules**: RHEL, Rocky Linux, Proxmox VE, Raspberry Pi, WSL
+- **OS-specific modules**: RHEL, Rocky Linux, Raspberry Pi, WSL
 - **User exclusion**: Hide MOTD for specific users
 - **Extensible**: Add custom scripts in `/etc/dynmotd.d/`
 - **Fortune integration**: Random quotes (optional)
@@ -148,7 +148,6 @@ dynmotd/
 ├── 00_rhel.sh           # RHEL/Oracle Linux module
 ├── 00_rocky.sh          # Rocky Linux module
 ├── 00_wsl.sh            # Windows Subsystem for Linux module
-├── 00_proxmox.sh        # Proxmox VE host module
 ├── 01_aws.sh            # AWS EC2 metadata
 ├── 01_azure.sh          # Azure VM metadata
 ├── 01_gcp.sh            # GCP Compute Engine metadata

@@ -41,10 +41,6 @@ if [[ $? -eq 0 ]] || [[ -f '/etc/rpi-issue' ]]
 then
   # if you want to disable it afterwards, just rename the file so that id doesn't have an .sh extension (i.e .sh_disabled)
   cp ./00_raspberry_pi.sh ${DYNMOTD_CUSTOM_SCRIPTS_PATH}/.
-elif command -v pvesh > /dev/null 2>&1
-then
-  # Proxmox VE host
-  cp ./00_proxmox.sh ${DYNMOTD_CUSTOM_SCRIPTS_PATH}/.
 elif [[ -f '/etc/rocky-release' ]] && command -v tuned-adm > /dev/null
 then
   cp ./00_rocky.sh ${DYNMOTD_CUSTOM_SCRIPTS_PATH}/.
