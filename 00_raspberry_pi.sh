@@ -6,7 +6,7 @@ PI_GPU_MEM=$(vcgencmd get_mem gpu | awk -F'=' '{ print $2 }')
 PI_TEMP=$(vcgencmd measure_temp | awk -F'=' '{ print $2 }')
 
 echo -e "===== PI INFO =================================================================
- ${COLOR_COLUMN}- Revision${RESET_COLORS}...........: ${COLOR_VALUE} ${PI_REVISION} ${RESET_COLORS}
- ${COLOR_COLUMN}- Bootloader${RESET_COLORS}.........: ${COLOR_VALUE} ${PI_BOOTLOADER} ${RESET_COLORS}
- ${COLOR_COLUMN}- GPU memory${RESET_COLORS}.........: ${COLOR_VALUE} ${PI_GPU_MEM} ${RESET_COLORS}
- ${COLOR_COLUMN}- Temperature${RESET_COLORS}........: ${COLOR_VALUE} ${PI_TEMP} ${RESET_COLORS}"
+ ${COLOR_COLUMN}${COLOR_VALUE}- Revision${RESET_COLORS}...........: ${PI_REVISION}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Bootloader${RESET_COLORS}.........: ${PI_BOOTLOADER}
+ ${COLOR_COLUMN}${COLOR_VALUE}- GPU memory${RESET_COLORS}.........: ${PI_GPU_MEM}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Temperature${RESET_COLORS}........: ${PI_TEMP}"

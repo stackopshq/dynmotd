@@ -1,5 +1,16 @@
 #!/bin/bash
 
+# Configuration file for excluded users
+EXCLUDED_USERS_FILE='/etc/dynmotd.conf'
+
+# Check if current user is excluded
+if [[ -f "${EXCLUDED_USERS_FILE}" ]]; then
+    CURRENT_USER=$(whoami)
+    if grep -qx "${CURRENT_USER}" "${EXCLUDED_USERS_FILE}" 2>/dev/null; then
+        exit 0
+    fi
+fi
+
 HOSTNAME=$(hostname -s)
 IP=$(hostname -I | awk '{print $1}')
 
@@ -9,17 +20,52 @@ IP=$(hostname -I | awk '{print $1}')
 #IP=$(getent hosts $(hostname -s) | awk '{print $1}')
 KERNEL=$(uname -r)
 
-#OS distro
+#OS distro detection with color coding (based on official logo colors)
+# Ubuntu=#E95420 (orange), Debian=#A80030 (red wine), RHEL=#EE0000 (red)
+# Rocky=#10B981 (green), AlmaLinux=#0F4266 (dark blue), Oracle=#F80000 (red)
+# SUSE=#73BA25 (green), Arch=#1793D1 (blue), Raspbian=#C51A4A (raspberry)
 if [ -f /etc/debian_version ]; then
 	OS_VERSION=$(lsb_release -ds)
+	if grep -qi 'ubuntu' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;202m"  # Ubuntu Orange (#E95420)
+	elif grep -qi 'raspbian' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;161m"  # Raspberry Pink (#C51A4A)
+	else
+		DISTRO_COLOR="\e[38;5;125m"  # Debian Wine Red (#A80030)
+	fi
 elif [ -f /etc/oracle-release ]; then
 	OS_VERSION=$(cat /etc/oracle-release)
+	DISTRO_COLOR="\e[38;5;196m"      # Oracle Red (#F80000)
+elif [ -f /etc/rocky-release ]; then
+	OS_VERSION=$(cat /etc/rocky-release)
+	DISTRO_COLOR="\e[38;5;42m"       # Rocky Green (#10B981)
+elif [ -f /etc/almalinux-release ]; then
+	OS_VERSION=$(cat /etc/almalinux-release)
+	DISTRO_COLOR="\e[38;5;24m"       # AlmaLinux Dark Blue (#0F4266)
 elif [ -f /etc/redhat-release ]; then
 	OS_VERSION=$(cat /etc/redhat-release)
+	DISTRO_COLOR="\e[38;5;196m"      # RHEL/CentOS Red (#EE0000)
+elif [ -f /etc/alpine-release ]; then
+	OS_VERSION="Alpine Linux $(cat /etc/alpine-release)"
+	DISTRO_COLOR="\e[38;5;33m"       # Alpine Blue (#0D597F)
 elif [ -f /etc/os-release ]; then
 	OS_VERSION=$(grep PRETTY_NAME /etc/os-release | awk -F '"' '{print $2}')
+	if grep -qi 'suse' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;76m"   # SUSE Green (#73BA25)
+	elif grep -qi 'arch' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;32m"   # Arch Blue (#1793D1)
+	elif grep -qi 'fedora' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;33m"   # Fedora Blue (#3C6EB4)
+	elif grep -qi 'manjaro' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;35m"   # Manjaro Green (#35BF5C)
+	elif grep -qi 'alpine' /etc/os-release 2>/dev/null; then
+		DISTRO_COLOR="\e[38;5;33m"   # Alpine Blue (#0D597F)
+	else
+		DISTRO_COLOR="\e[37m"        # White for unknown
+	fi
 else
 	OS_VERSION='Unrecognized Linux distribution'
+	DISTRO_COLOR="\e[37m"            # White for unknown
 fi
 
 
@@ -50,25 +96,27 @@ CUSTOM_CHECKS_DIR='/etc/dynmotd.d'
 
 #---------------------------------------------------------------------------#
 
-COLOR_COLUMN="\e[1m-"
-COLOR_VALUE="\e[31m"
+# Export colors for use in additional scripts
+COLOR_COLUMN="\e[1m"
+COLOR_VALUE="${DISTRO_COLOR}"
 RESET_COLORS="\e[0m"
+export COLOR_COLUMN COLOR_VALUE RESET_COLORS DISTRO_COLOR
 
 echo -e "
 ===============================================================================
- ${COLOR_COLUMN}- Hostname${RESET_COLORS}...........: ${COLOR_VALUE} ${HOSTNAME} (${IP}) ${RESET_COLORS}
- ${COLOR_COLUMN}- OS version${RESET_COLORS}.........: ${COLOR_VALUE} ${OS_VERSION} ${RESET_COLORS}
- ${COLOR_COLUMN}- Kernel release${RESET_COLORS}.....: ${COLOR_VALUE} ${KERNEL} ${RESET_COLORS}
- ${COLOR_COLUMN}- Users${RESET_COLORS}..............: ${COLOR_VALUE} Currently $(users | wc -w) user(s) logged on ${RESET_COLORS}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Hostname${RESET_COLORS}...........: ${HOSTNAME} (${IP})
+ ${COLOR_COLUMN}${COLOR_VALUE}- OS version${RESET_COLORS}.........: ${OS_VERSION}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Kernel release${RESET_COLORS}.....: ${KERNEL}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Users${RESET_COLORS}..............: Currently $(users | wc -w) user(s) logged on
 ===============================================================================
- ${COLOR_COLUMN}- CPUs${RESET_COLORS}...............: ${COLOR_VALUE} ${CPU_COUNT} x ${CPU_VENDOR}/${CPU_MODEL} ${RESET_COLORS}
- ${COLOR_COLUMN}- Load average${RESET_COLORS}.......: ${COLOR_VALUE} ${LOAD1} - ${LOAD5} - ${LOAD15} (1-5-15 min) ${RESET_COLORS}
- ${COLOR_COLUMN}- Memory${RESET_COLORS}.............: ${COLOR_VALUE} ${MEMORY} (total-used-free) ${RESET_COLORS}
- ${COLOR_COLUMN}- Swap${RESET_COLORS}...............: ${COLOR_VALUE} ${SWAP} (total-used-free) ${RESET_COLORS}
- ${COLOR_COLUMN}- Processes${RESET_COLORS}..........: ${COLOR_VALUE} ${PSA} running - ${BG_JOBS} background - ${ZOMBIE} zombies ${RESET_COLORS}
- ${COLOR_COLUMN}- System uptime${RESET_COLORS}......: ${COLOR_VALUE} ${upDays} days ${upHours} hours ${upMins} minutes ${upSecs} seconds ${RESET_COLORS}"
+ ${COLOR_COLUMN}${COLOR_VALUE}- CPUs${RESET_COLORS}...............: ${CPU_COUNT} x ${CPU_VENDOR}/${CPU_MODEL}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Load average${RESET_COLORS}.......: ${LOAD1} - ${LOAD5} - ${LOAD15} (1-5-15 min)
+ ${COLOR_COLUMN}${COLOR_VALUE}- Memory${RESET_COLORS}.............: ${MEMORY} (total-used-free)
+ ${COLOR_COLUMN}${COLOR_VALUE}- Swap${RESET_COLORS}...............: ${SWAP} (total-used-free)
+ ${COLOR_COLUMN}${COLOR_VALUE}- Processes${RESET_COLORS}..........: ${PSA} running - ${BG_JOBS} background - ${ZOMBIE} zombies
+ ${COLOR_COLUMN}${COLOR_VALUE}- System uptime${RESET_COLORS}......: ${upDays} days ${upHours} hours ${upMins} minutes ${upSecs} seconds"
 
-if [ -d ${CUSTOM_CHECKS_DIR} ] && [ ! -z "$(ls -A ${CUSTOM_CHECKS_DIR})" ]; then
+if [[ -d ${CUSTOM_CHECKS_DIR} ]] && [[ -n "$(ls -A ${CUSTOM_CHECKS_DIR})" ]]; then
     for i in "${CUSTOM_CHECKS_DIR}"/*.sh; do
         . "${i}"
     done

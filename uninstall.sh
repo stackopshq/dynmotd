@@ -1,5 +1,5 @@
 #! /bin/bash
-set +x
+set -e
 
 echo '+ starting uninstall'
 DYNMOTD_BIN_PATH='/usr/local/bin'
@@ -11,5 +11,6 @@ rm /etc/profile.d/dynmotd.sh
 rm -Rf ${DYNMOTD_CUSTOM_SCRIPTS_PATH}
 rm ${DYNMOTD_BIN_PATH}/dm 
 rm ${DYNMOTD_BIN_PATH}/dynmotd
+rm -f /etc/dynmotd.conf
 
 echo '+ uninstall complete!'

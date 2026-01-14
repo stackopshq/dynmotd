@@ -1,16 +1,16 @@
 # https://cloud.google.com/appengine/docs/standard/java/accessing-instance-metadata
 # https://cloud.google.com/compute/docs/reference/rest/v1/instances/list
-GCP_EXTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip")
+GCP_EXTERNAL_IP=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip")
 GCP_EXTERNAL_IP=${GCP_EXTERNAL_IP:-'None'}
 
-GCP_PROJECT=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/project/project-id")
-GCP_INSTANCE_MACHINE_TYPE=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/machine-type" | xargs basename)
-GCP_INSTANCE_IMAGE=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/image" | xargs basename)
-GCP_INSTANCE_PREEMPTIBLE=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/scheduling/preemptible")
-GCP_INSTANCE_VPC=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/network" | xargs basename)
-GCP_INSTANCE_ZONE=$(curl -s -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/zone" | xargs basename)
+GCP_PROJECT=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/project/project-id")
+GCP_INSTANCE_MACHINE_TYPE=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/machine-type" | xargs basename)
+GCP_INSTANCE_IMAGE=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/image" | xargs basename)
+GCP_INSTANCE_PREEMPTIBLE=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/scheduling/preemptible")
+GCP_INSTANCE_VPC=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/network" | xargs basename)
+GCP_INSTANCE_ZONE=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "metadata.google.internal/computeMetadata/v1/instance/zone" | xargs basename)
 
-input_scopes=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes")
+input_scopes=$(curl -s --max-time 2 -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes")
 
 # https://cloud.google.com/compute/docs/access/service-accounts#default_scopes
 DEFAULT_SCOPE=(
@@ -59,11 +59,11 @@ GCP_ADDITIONAL_SCOPES=$(IFS=,; echo "${ADDITIONAL_SCOPE[*]}")
 
 
 echo -e "===== GCP INSTANCE METADATA ===================================================
- ${COLOR_COLUMN}- External IP${RESET_COLORS}........: ${COLOR_VALUE} ${GCP_EXTERNAL_IP} ${RESET_COLORS}
- ${COLOR_COLUMN}- Project ID${RESET_COLORS}.........: ${COLOR_VALUE} ${GCP_PROJECT} ${RESET_COLORS}
- ${COLOR_COLUMN}- Machine Type${RESET_COLORS}.......: ${COLOR_VALUE} ${GCP_INSTANCE_MACHINE_TYPE} ${RESET_COLORS}
- ${COLOR_COLUMN}- Image${RESET_COLORS}..............: ${COLOR_VALUE} ${GCP_INSTANCE_IMAGE} ${RESET_COLORS}
- ${COLOR_COLUMN}- Preemptible${RESET_COLORS}........: ${COLOR_VALUE} ${GCP_INSTANCE_PREEMPTIBLE} ${RESET_COLORS}
- ${COLOR_COLUMN}- VPC${RESET_COLORS}................: ${COLOR_VALUE} ${GCP_INSTANCE_VPC} ${RESET_COLORS}
- ${COLOR_COLUMN}- Zone${RESET_COLORS}...............: ${COLOR_VALUE} ${GCP_INSTANCE_ZONE} ${RESET_COLORS}
- ${COLOR_COLUMN}- Additional Scopes${RESET_COLORS}..: ${COLOR_VALUE} [${GCP_ADDITIONAL_SCOPES}] ${RESET_COLORS}"
+ ${COLOR_COLUMN}${COLOR_VALUE}- External IP${RESET_COLORS}........: ${GCP_EXTERNAL_IP}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Project ID${RESET_COLORS}.........: ${GCP_PROJECT}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Machine Type${RESET_COLORS}.......: ${GCP_INSTANCE_MACHINE_TYPE}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Image${RESET_COLORS}..............: ${GCP_INSTANCE_IMAGE}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Preemptible${RESET_COLORS}........: ${GCP_INSTANCE_PREEMPTIBLE}
+ ${COLOR_COLUMN}${COLOR_VALUE}- VPC${RESET_COLORS}................: ${GCP_INSTANCE_VPC}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Zone${RESET_COLORS}...............: ${GCP_INSTANCE_ZONE}
+ ${COLOR_COLUMN}${COLOR_VALUE}- Additional Scopes${RESET_COLORS}..: [${GCP_ADDITIONAL_SCOPES}]"
