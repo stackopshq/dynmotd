@@ -1,0 +1,125 @@
+#!/bin/bash
+# dynmotd-exclude — manage who sees the dynmotd banner at login
+set -e
+
+EXCLUDED_USERS_FILE='/etc/dynmotd.conf'
+USER_DISABLE_FILE="${HOME}/.dynmotd-disable"
+
+usage() {
+    cat <<EOF
+Usage: dynmotd-exclude COMMAND [args]
+
+Admin commands (require root):
+  add USER       Exclude USER from MOTD at the system level
+  remove USER    Re-enable MOTD for USER
+  list           Show all system-excluded users
+
+Per-user commands (no root needed):
+  mute           Disable MOTD for yourself (creates ~/.dynmotd-disable)
+  unmute         Re-enable MOTD for yourself
+  status         Show whether your MOTD is currently disabled
+
+System exclusions are kept in ${EXCLUDED_USERS_FILE}.
+Self-mute lives in \$HOME/.dynmotd-disable.
+EOF
+}
+
+require_root() {
+    if [[ "$(id -u)" != '0' ]]; then
+        echo "dynmotd-exclude: '$1' requires root" >&2
+        exit 1
+    fi
+}
+
+validate_username() {
+    # POSIX-ish username: starts with letter/underscore, max 32 chars, no metacharacters.
+    if ! [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]]; then
+        echo "dynmotd-exclude: invalid username '$1'" >&2
+        exit 2
+    fi
+}
+
+cmd_add() {
+    local user="${1:-}"
+    [[ -z "${user}" ]] && { echo 'usage: dynmotd-exclude add USER' >&2; exit 2; }
+    validate_username "${user}"
+    require_root 'add'
+    touch "${EXCLUDED_USERS_FILE}"
+    chmod 644 "${EXCLUDED_USERS_FILE}"
+    if grep -qFx "${user}" "${EXCLUDED_USERS_FILE}"; then
+        echo "${user} already excluded"
+        return
+    fi
+    echo "${user}" >> "${EXCLUDED_USERS_FILE}"
+    echo "excluded ${user}"
+}
+
+cmd_remove() {
+    local user="${1:-}"
+    [[ -z "${user}" ]] && { echo 'usage: dynmotd-exclude remove USER' >&2; exit 2; }
+    validate_username "${user}"
+    require_root 'remove'
+    if [[ ! -f "${EXCLUDED_USERS_FILE}" ]] || ! grep -qFx "${user}" "${EXCLUDED_USERS_FILE}"; then
+        echo "${user} not excluded"
+        return
+    fi
+    local tmp
+    tmp=$(mktemp "${EXCLUDED_USERS_FILE}.XXXXXX")
+    grep -vFx "${user}" "${EXCLUDED_USERS_FILE}" > "${tmp}" || true
+    mv "${tmp}" "${EXCLUDED_USERS_FILE}"
+    chmod 644 "${EXCLUDED_USERS_FILE}"
+    echo "re-enabled ${user}"
+}
+
+cmd_list() {
+    [[ -f "${EXCLUDED_USERS_FILE}" ]] || { echo 'no exclusions'; return; }
+    local users
+    users=$(grep -Ev '^(#|$)' "${EXCLUDED_USERS_FILE}" || true)
+    if [[ -z "${users}" ]]; then
+        echo 'no exclusions'
+    else
+        echo "${users}"
+    fi
+}
+
+cmd_mute() {
+    touch "${USER_DISABLE_FILE}"
+    echo "MOTD disabled for $(whoami)"
+}
+
+cmd_unmute() {
+    if [[ -f "${USER_DISABLE_FILE}" ]]; then
+        rm -f "${USER_DISABLE_FILE}"
+        echo "MOTD re-enabled for $(whoami)"
+    else
+        echo "MOTD already enabled for $(whoami)"
+    fi
+}
+
+cmd_status() {
+    local user system_excluded='no' user_muted='no'
+    user=$(whoami)
+    if [[ -f "${EXCLUDED_USERS_FILE}" ]] && grep -qFx "${user}" "${EXCLUDED_USERS_FILE}" 2>/dev/null; then
+        system_excluded='yes'
+    fi
+    [[ -f "${USER_DISABLE_FILE}" ]] && user_muted='yes'
+    printf 'user:            %s\n'   "${user}"
+    printf 'system-excluded: %s\n'   "${system_excluded}"
+    printf 'self-muted:      %s\n'   "${user_muted}"
+    if [[ "${system_excluded}" == 'yes' || "${user_muted}" == 'yes' ]]; then
+        echo '=> MOTD disabled'
+    else
+        echo '=> MOTD enabled'
+    fi
+}
+
+case "${1:-}" in
+    add)               shift; cmd_add "$@";;
+    remove|rm|delete)  shift; cmd_remove "$@";;
+    list|ls)           cmd_list;;
+    mute)              cmd_mute;;
+    unmute)            cmd_unmute;;
+    status)            cmd_status;;
+    -h|--help|help|'') usage;;
+    *)                 echo "dynmotd-exclude: unknown command: $1" >&2; usage >&2; exit 2;;
+esac

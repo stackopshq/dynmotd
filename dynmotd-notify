@@ -1,0 +1,114 @@
+#!/bin/bash
+# dynmotd-notify — manage MOTD notices shown to users at login
+set -e
+
+NOTICES_DIR='/var/lib/dynmotd/notices'
+
+usage() {
+    cat <<EOF
+Usage: dynmotd-notify COMMAND [args]
+
+Commands:
+  add [--expires YYYY-MM-DD] MESSAGE...   Add a notice
+  list                                    List all notices
+  remove ID                               Remove a notice by ID
+  clear                                   Remove all notices
+
+Notices appear for every user at login. Storage: ${NOTICES_DIR}/*.notice
+Writing requires root (or membership of the directory's group).
+EOF
+}
+
+require_writable() {
+    mkdir -p "${NOTICES_DIR}" 2>/dev/null || true
+    if [[ ! -w "${NOTICES_DIR}" ]]; then
+        echo "dynmotd-notify: ${NOTICES_DIR} not writable — run as root" >&2
+        exit 1
+    fi
+}
+
+validate_date() {
+    if ! [[ "$1" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        echo "dynmotd-notify: invalid date '$1' (expected YYYY-MM-DD)" >&2
+        exit 2
+    fi
+}
+
+cmd_add() {
+    local expires=''
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --expires) expires="$2"; validate_date "${expires}"; shift 2;;
+            --)        shift; break;;
+            -*)        echo "dynmotd-notify: unknown option: $1" >&2; exit 2;;
+            *)         break;;
+        esac
+    done
+    local message="$*"
+    if [[ -z "${message}" ]]; then
+        echo "dynmotd-notify: message required" >&2
+        exit 2
+    fi
+    require_writable
+    local id
+    id="$(date +%Y%m%d-%H%M%S)-$$"
+    local path="${NOTICES_DIR}/${id}.notice"
+    {
+        [[ -n "${expires}" ]] && echo "# expires: ${expires}"
+        echo "${message}"
+    } > "${path}"
+    chmod 644 "${path}"
+    echo "added notice ${id}"
+}
+
+cmd_list() {
+    if [[ ! -d "${NOTICES_DIR}" ]]; then
+        echo "no notices"
+        return
+    fi
+    local found=0 f id expires text
+    for f in "${NOTICES_DIR}"/*.notice; do
+        [[ -f "${f}" ]] || continue
+        found=1
+        id=$(basename "${f}" .notice)
+        expires=$(awk -F': *' '/^# *expires:/ {print $2; exit}' "${f}")
+        text=$(grep -v '^#' "${f}" | sed '/^$/d')
+        printf '[%s]%s\n' "${id}" "${expires:+ (expires ${expires})}"
+        while IFS= read -r line; do
+            printf '    %s\n' "${line}"
+        done <<< "${text}"
+    done
+    [[ ${found} -eq 0 ]] && echo "no notices"
+}
+
+cmd_remove() {
+    local id="${1:-}"
+    if [[ -z "${id}" ]]; then
+        echo "usage: dynmotd-notify remove ID" >&2
+        exit 2
+    fi
+    local path="${NOTICES_DIR}/${id}.notice"
+    if [[ ! -f "${path}" ]]; then
+        echo "dynmotd-notify: no such notice: ${id}" >&2
+        exit 1
+    fi
+    require_writable
+    rm -f "${path}"
+    echo "removed ${id}"
+}
+
+cmd_clear() {
+    [[ -d "${NOTICES_DIR}" ]] || { echo "no notices"; return; }
+    require_writable
+    rm -f "${NOTICES_DIR}"/*.notice
+    echo "cleared all notices"
+}
+
+case "${1:-}" in
+    add)               shift; cmd_add "$@";;
+    list|ls)           cmd_list;;
+    remove|rm|delete)  shift; cmd_remove "$@";;
+    clear)             cmd_clear;;
+    -h|--help|help|'') usage;;
+    *)                 echo "dynmotd-notify: unknown command: $1" >&2; usage >&2; exit 2;;
+esac

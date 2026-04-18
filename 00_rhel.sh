@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # RHEL/Oracle Linux specific info
 TUNED_PROFILE=$(tuned-adm active 2>/dev/null | awk -F': ' '{ print $2 }')
 TUNED_PROFILE=${TUNED_PROFILE:-'N/A'}

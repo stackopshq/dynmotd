@@ -1,124 +1,236 @@
 #!/bin/bash
 
-# Configuration file for excluded users
 EXCLUDED_USERS_FILE='/etc/dynmotd.conf'
-
-# Check if current user is excluded
-if [[ -f "${EXCLUDED_USERS_FILE}" ]]; then
-    CURRENT_USER=$(whoami)
-    if grep -qx "${CURRENT_USER}" "${EXCLUDED_USERS_FILE}" 2>/dev/null; then
-        exit 0
-    fi
-fi
-
-HOSTNAME=$(hostname -s)
-IP=$(hostname -I | awk '{print $1}')
-
-#EXT_IP=$(curl -s ipinfo.io/ip)
-#EXT_IP=${EXT_IP:-None}
-
-#IP=$(getent hosts $(hostname -s) | awk '{print $1}')
-KERNEL=$(uname -r)
-
-#OS distro detection with color coding (based on official logo colors)
-# Ubuntu=#E95420 (orange), Debian=#A80030 (red wine), RHEL=#EE0000 (red)
-# Rocky=#10B981 (green), AlmaLinux=#0F4266 (dark blue), Oracle=#F80000 (red)
-# SUSE=#73BA25 (green), Arch=#1793D1 (blue), Raspbian=#C51A4A (raspberry)
-if [ -f /etc/debian_version ]; then
-	OS_VERSION=$(lsb_release -ds)
-	if grep -qi 'ubuntu' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;202m"  # Ubuntu Orange (#E95420)
-	elif grep -qi 'raspbian' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;161m"  # Raspberry Pink (#C51A4A)
-	else
-		DISTRO_COLOR="\e[38;5;125m"  # Debian Wine Red (#A80030)
-	fi
-elif [ -f /etc/oracle-release ]; then
-	OS_VERSION=$(cat /etc/oracle-release)
-	DISTRO_COLOR="\e[38;5;196m"      # Oracle Red (#F80000)
-elif [ -f /etc/rocky-release ]; then
-	OS_VERSION=$(cat /etc/rocky-release)
-	DISTRO_COLOR="\e[38;5;42m"       # Rocky Green (#10B981)
-elif [ -f /etc/almalinux-release ]; then
-	OS_VERSION=$(cat /etc/almalinux-release)
-	DISTRO_COLOR="\e[38;5;24m"       # AlmaLinux Dark Blue (#0F4266)
-elif [ -f /etc/redhat-release ]; then
-	OS_VERSION=$(cat /etc/redhat-release)
-	DISTRO_COLOR="\e[38;5;196m"      # RHEL/CentOS Red (#EE0000)
-elif [ -f /etc/alpine-release ]; then
-	OS_VERSION="Alpine Linux $(cat /etc/alpine-release)"
-	DISTRO_COLOR="\e[38;5;33m"       # Alpine Blue (#0D597F)
-elif [ -f /etc/os-release ]; then
-	OS_VERSION=$(grep PRETTY_NAME /etc/os-release | awk -F '"' '{print $2}')
-	if grep -qi 'suse' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;76m"   # SUSE Green (#73BA25)
-	elif grep -qi 'arch' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;32m"   # Arch Blue (#1793D1)
-	elif grep -qi 'fedora' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;33m"   # Fedora Blue (#3C6EB4)
-	elif grep -qi 'manjaro' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;35m"   # Manjaro Green (#35BF5C)
-	elif grep -qi 'alpine' /etc/os-release 2>/dev/null; then
-		DISTRO_COLOR="\e[38;5;33m"   # Alpine Blue (#0D597F)
-	else
-		DISTRO_COLOR="\e[37m"        # White for unknown
-	fi
-else
-	OS_VERSION='Unrecognized Linux distribution'
-	DISTRO_COLOR="\e[37m"            # White for unknown
-fi
-
-
-CPU_COUNT=$(lscpu | grep ^'CPU(s)' | awk -F ': ' {'print $2'} | xargs)
-CPU_VENDOR=$(lscpu | grep ^'Vendor ID' | awk -F ': ' {'print $2'} | xargs)
-CPU_MODEL=$(lscpu | grep ^'Model name' | awk -F ': ' {'print $2'} | xargs)
-MEMORY=$(free -h | grep "Mem" | awk '{print $2,"-",$3,"-",$4}')
-SWAP=$(free -h | grep "Swap" | awk '{print $2,"-",$3,"-",$4}')
-PSA=$(ps -Afl | wc -l)
-BG_JOBS=$(ps -eo user,pid,tty,stat,cmd --no-headers | awk '($4 !~ /\+$/ && $3 != "?")' | grep -v $(basename ${SHELL}) | grep -v 'install.sh' | wc -l)
-ZOMBIE=$(pgrep defunct | wc -l)
-
-#System load
-LOAD1=$(awk '{print $1}' < /proc/loadavg)
-LOAD5=$(awk '{print $2}' < /proc/loadavg)
-LOAD15=$(awk '{print $3}' < /proc/loadavg)
-
-#System uptime
-uptime=$(cut -f1 -d. < /proc/uptime)
-upDays=$((uptime/60/60/24))
-upHours=$((uptime/60/60%24))
-upMins=$((uptime/60%60))
-upSecs=$((uptime%60))
-
-
-#Additional checks can be placed in this directory on the server
 CUSTOM_CHECKS_DIR='/etc/dynmotd.d'
 
-#---------------------------------------------------------------------------#
+# Per-user opt-out (managed via `dynmotd-exclude mute`)
+[[ -f "${HOME}/.dynmotd-disable" ]] && exit 0
 
-# Export colors for use in additional scripts
-COLOR_COLUMN="\e[1m"
+# Admin-level exclusion (managed via `dynmotd-exclude add USER`)
+if [[ -f "${EXCLUDED_USERS_FILE}" ]] && grep -qFx "$(whoami)" "${EXCLUDED_USERS_FILE}" 2>/dev/null; then
+    exit 0
+fi
+
+# Distro detection — to add a distro, add ONE entry to the appropriate table.
+# Format: 'pattern|xterm-256-color-code' (colors from official brand palettes)
+
+DISTRO_BY_RELEASE_FILE=(
+    '/etc/oracle-release|196'      # Oracle Red (#F80000)
+    '/etc/rocky-release|42'        # Rocky Green (#10B981)
+    '/etc/almalinux-release|24'    # AlmaLinux Dark Blue (#0F4266)
+    '/etc/redhat-release|196'      # RHEL/CentOS Red (#EE0000)
+)
+
+DISTRO_BY_OS_RELEASE=(
+    'ubuntu|202'     # Ubuntu Orange (#E95420)
+    'raspbian|161'   # Raspbian (#C51A4A)
+    'suse|76'        # SUSE Green (#73BA25)
+    'arch|32'        # Arch Blue (#1793D1)
+    'fedora|33'      # Fedora Blue (#3C6EB4)
+    'manjaro|35'     # Manjaro Green (#35BF5C)
+    'alpine|33'      # Alpine Blue (#0D597F)
+)
+
+os_release_pretty() {
+    [[ -f /etc/os-release ]] || return 1
+    awk -F= '$1=="PRETTY_NAME" {gsub(/"/,"",$2); print $2; exit}' /etc/os-release
+}
+
+detect_distro() {
+    local entry pattern color
+
+    if [[ -f /etc/alpine-release ]]; then
+        OS_VERSION="Alpine Linux $(< /etc/alpine-release)"
+        DISTRO_COLOR='\e[38;5;33m'
+        return
+    fi
+
+    for entry in "${DISTRO_BY_RELEASE_FILE[@]}"; do
+        pattern="${entry%|*}"
+        color="${entry#*|}"
+        if [[ -f "${pattern}" ]]; then
+            OS_VERSION=$(< "${pattern}")
+            DISTRO_COLOR="\e[38;5;${color}m"
+            return
+        fi
+    done
+
+    if [[ -f /etc/debian_version ]]; then
+        OS_VERSION=$(lsb_release -ds 2>/dev/null || os_release_pretty)
+        DISTRO_COLOR='\e[38;5;125m'
+        for entry in "${DISTRO_BY_OS_RELEASE[@]}"; do
+            pattern="${entry%|*}"
+            color="${entry#*|}"
+            if grep -qi "${pattern}" /etc/os-release 2>/dev/null; then
+                DISTRO_COLOR="\e[38;5;${color}m"
+                return
+            fi
+        done
+        return
+    fi
+
+    if [[ -f /etc/os-release ]]; then
+        OS_VERSION=$(os_release_pretty)
+        for entry in "${DISTRO_BY_OS_RELEASE[@]}"; do
+            pattern="${entry%|*}"
+            color="${entry#*|}"
+            if grep -qi "${pattern}" /etc/os-release 2>/dev/null; then
+                DISTRO_COLOR="\e[38;5;${color}m"
+                return
+            fi
+        done
+        DISTRO_COLOR='\e[37m'
+        return
+    fi
+
+    OS_VERSION='Unrecognized Linux distribution'
+    DISTRO_COLOR='\e[37m'
+}
+
+detect_cpu() {
+    if command -v lscpu >/dev/null 2>&1; then
+        CPU_COUNT=$(lscpu | awk -F': *' '/^CPU\(s\)/ {print $2; exit}' | xargs)
+        CPU_VENDOR=$(lscpu | awk -F': *' '/^Vendor ID/ {print $2; exit}' | xargs)
+        CPU_MODEL=$(lscpu | awk -F': *' '/^Model name/ {print $2; exit}' | xargs)
+    elif [[ -r /proc/cpuinfo ]]; then
+        CPU_COUNT=$(grep -c '^processor' /proc/cpuinfo)
+        CPU_VENDOR=$(awk -F': ' '/^vendor_id/ {print $2; exit}' /proc/cpuinfo)
+        CPU_MODEL=$(awk -F': ' '/^model name/ {print $2; exit}' /proc/cpuinfo)
+    fi
+    CPU_COUNT=${CPU_COUNT:-unknown}
+    CPU_VENDOR=${CPU_VENDOR:-unknown}
+    CPU_MODEL=${CPU_MODEL:-unknown}
+}
+
+detect_memory() {
+    if command -v free >/dev/null 2>&1; then
+        MEMORY=$(free -h | awk '/^Mem/ {print $2,"-",$3,"-",$4}')
+        SWAP=$(free -h | awk '/^Swap/ {print $2,"-",$3,"-",$4}')
+    fi
+    MEMORY=${MEMORY:-unknown}
+    SWAP=${SWAP:-unknown}
+}
+
+detect_load() {
+    if [[ -r /proc/loadavg ]]; then
+        read -r LOAD1 LOAD5 LOAD15 _ < /proc/loadavg
+    else
+        LOAD1='?' LOAD5='?' LOAD15='?'
+    fi
+}
+
+detect_uptime() {
+    if [[ -r /proc/uptime ]]; then
+        local uptime
+        uptime=$(cut -f1 -d. < /proc/uptime)
+        UP_DAYS=$((uptime/60/60/24))
+        UP_HOURS=$((uptime/60/60%24))
+        UP_MINS=$((uptime/60%60))
+        UP_SECS=$((uptime%60))
+    else
+        UP_DAYS=0 UP_HOURS=0 UP_MINS=0 UP_SECS=0
+    fi
+}
+
+detect_virt() {
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        local v
+        v=$(systemd-detect-virt 2>/dev/null)
+        [[ "${v}" != "none" ]] && VIRT="${v}"
+    fi
+}
+
+detect_disk() {
+    command -v df >/dev/null 2>&1 || return
+    # Show real filesystem mountpoints (skip tmpfs, overlays, pseudo-fs, loop devices).
+    DISK_LINES=$(df -h -P 2>/dev/null | awk '
+        NR==1 || NF<6 { next }
+        $6 !~ /^\// { next }
+        $1 ~ /^(tmpfs|devtmpfs|overlay|none|udev|cgroup|sysfs|proc)/ { next }
+        $1 ~ /^\/dev\/loop/ { next }
+        $6 ~ /^\/(proc|sys|run|dev|boot\/efi|snap|var\/lib\/docker|var\/lib\/containers|System\/Volumes)/ { next }
+        { printf "%s|%s|%s|%s|%s\n", $6, $2, $3, $4, $5 }
+    ')
+}
+
+detect_last_login() {
+    command -v last >/dev/null 2>&1 || return
+    # "last -n 2 USER" gives current session + previous; skip #1 (current), show #2.
+    LAST_LOGIN=$(last -F -n 2 "${USER:-$(whoami)}" 2>/dev/null \
+        | awk 'NR==2 && NF>3 { for(i=3;i<=NF;i++) printf "%s ", $i; print "" }' \
+        | sed 's/ *$//')
+    [[ "${LAST_LOGIN}" == *"wtmp begins"* ]] && LAST_LOGIN=''
+}
+
+row() {
+    local label="$1" value="$2"
+    local pad='...................'
+    local dots=$((19 - ${#label}))
+    [[ ${dots} -lt 0 ]] && dots=0
+    printf ' %b- %s%.*s%b: %s\n' \
+        "${COLOR_COLUMN}${COLOR_VALUE}" "${label}" "${dots}" "${pad}" \
+        "${RESET_COLORS}" "${value}"
+}
+
+HOSTNAME=$(hostname -s)
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+IP=${IP:-unknown}
+KERNEL=$(uname -r)
+
+detect_distro
+detect_cpu
+detect_memory
+detect_load
+detect_uptime
+detect_virt
+detect_disk
+detect_last_login
+
+SHELL_BASE=$(basename "${SHELL:-sh}")
+BG_JOBS=$(ps -eo user,pid,tty,stat,cmd --no-headers 2>/dev/null \
+    | awk '($4 !~ /\+$/ && $3 != "?")' \
+    | grep -cvE "(${SHELL_BASE}|install\.sh)")
+PSA=$(ps -Afl 2>/dev/null | wc -l)
+ZOMBIE=$(pgrep defunct 2>/dev/null | wc -l)
+
+# Colors: disable on non-TTY output or when NO_COLOR is set (https://no-color.org/)
+COLOR_COLUMN='\e[1m'
 COLOR_VALUE="${DISTRO_COLOR}"
-RESET_COLORS="\e[0m"
+RESET_COLORS='\e[0m'
+if [[ ! -t 1 || -n "${NO_COLOR:-}" ]]; then
+    COLOR_COLUMN=''
+    COLOR_VALUE=''
+    RESET_COLORS=''
+    DISTRO_COLOR=''
+fi
 export COLOR_COLUMN COLOR_VALUE RESET_COLORS DISTRO_COLOR
 
-echo -e "
-===============================================================================
- ${COLOR_COLUMN}${COLOR_VALUE}- Hostname${RESET_COLORS}...........: ${HOSTNAME} (${IP})
- ${COLOR_COLUMN}${COLOR_VALUE}- OS version${RESET_COLORS}.........: ${OS_VERSION}
- ${COLOR_COLUMN}${COLOR_VALUE}- Kernel release${RESET_COLORS}.....: ${KERNEL}
- ${COLOR_COLUMN}${COLOR_VALUE}- Users${RESET_COLORS}..............: Currently $(users | wc -w) user(s) logged on
-===============================================================================
- ${COLOR_COLUMN}${COLOR_VALUE}- CPUs${RESET_COLORS}...............: ${CPU_COUNT} x ${CPU_VENDOR}/${CPU_MODEL}
- ${COLOR_COLUMN}${COLOR_VALUE}- Load average${RESET_COLORS}.......: ${LOAD1} - ${LOAD5} - ${LOAD15} (1-5-15 min)
- ${COLOR_COLUMN}${COLOR_VALUE}- Memory${RESET_COLORS}.............: ${MEMORY} (total-used-free)
- ${COLOR_COLUMN}${COLOR_VALUE}- Swap${RESET_COLORS}...............: ${SWAP} (total-used-free)
- ${COLOR_COLUMN}${COLOR_VALUE}- Processes${RESET_COLORS}..........: ${PSA} running - ${BG_JOBS} background - ${ZOMBIE} zombies
- ${COLOR_COLUMN}${COLOR_VALUE}- System uptime${RESET_COLORS}......: ${upDays} days ${upHours} hours ${upMins} minutes ${upSecs} seconds"
+echo ''
+echo '==============================================================================='
+row 'Hostname'       "${HOSTNAME} (${IP})"
+row 'OS version'     "${OS_VERSION}"
+row 'Kernel release' "${KERNEL}"
+[[ -n "${VIRT}" ]] && row 'Virtualization' "${VIRT}"
+row 'Users'          "Currently $(users | wc -w) user(s) logged on"
+[[ -n "${LAST_LOGIN}" ]] && row 'Last login' "${LAST_LOGIN}"
+echo '==============================================================================='
+row 'CPUs'           "${CPU_COUNT} x ${CPU_VENDOR}/${CPU_MODEL}"
+row 'Load average'   "${LOAD1} - ${LOAD5} - ${LOAD15} (1-5-15 min)"
+row 'Memory'         "${MEMORY} (total-used-free)"
+row 'Swap'           "${SWAP} (total-used-free)"
+if [[ -n "${DISK_LINES}" ]]; then
+    while IFS='|' read -r mount size used avail pct; do
+        row "Disk ${mount}" "${size} - ${used} - ${avail} (${pct} used)"
+    done <<< "${DISK_LINES}"
+fi
+row 'Processes'      "${PSA} running - ${BG_JOBS} background - ${ZOMBIE} zombies"
+row 'System uptime'  "${UP_DAYS} days ${UP_HOURS} hours ${UP_MINS} minutes ${UP_SECS} seconds"
 
-if [[ -d ${CUSTOM_CHECKS_DIR} ]] && [[ -n "$(ls -A ${CUSTOM_CHECKS_DIR})" ]]; then
-    for i in "${CUSTOM_CHECKS_DIR}"/*.sh; do
-        . "${i}"
+if [[ -d "${CUSTOM_CHECKS_DIR}" ]]; then
+    for module in "${CUSTOM_CHECKS_DIR}"/*.sh; do
+        [[ -f "${module}" ]] || continue
+        # shellcheck source=/dev/null
+        . "${module}"
     done
 fi
 

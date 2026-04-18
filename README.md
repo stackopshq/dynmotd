@@ -6,10 +6,15 @@ Dynamic MOTD (Message of the Day) for Linux distributions with distribution-spec
 
 ## Features
 
-- **Distribution-specific colors** based on official logo colors
-- **Cloud provider detection**: AWS, Azure, GCP, OpenStack
+- **Distribution-specific colors** based on official logo colors (auto-disabled on non-TTY output and when `NO_COLOR` is set)
+- **Cloud provider detection**: AWS, Azure, GCP, OpenStack — detected at login, not install time
 - **OS-specific modules**: RHEL, Rocky Linux, Raspberry Pi, WSL
+- **Virtualization detection**: KVM, VMware, Xen, Docker, LXC, Kubernetes, etc. (via `systemd-detect-virt`)
+- **Disk usage** for all real mountpoints
+- **Last login** per user
+- **Sysadmin notices**: broadcast messages with `dynmotd-notify`
 - **User exclusion**: Hide MOTD for specific users
+- **Multi-shell login hooks**: bash, zsh, fish
 - **Extensible**: Add custom scripts in `/etc/dynmotd.d/`
 - **Fortune integration**: Random quotes (optional)
 
@@ -50,12 +55,16 @@ sudo ./install.sh
 ```
 
 This will:
-1. Install `dynmotd` to `/usr/local/bin/`
+1. Install `dynmotd`, `dynmotd-notify`, `dynmotd-exclude` to `/usr/local/bin/`
 2. Create symlink `dm` for quick access
-3. Set up `/etc/profile.d/dynmotd.sh` for automatic display on login
+3. Wire up login hooks for every shell detected on the system:
+   - **bash** → `/etc/profile.d/dynmotd.sh`
+   - **zsh** → block appended to `/etc/zsh/zprofile` (or `/etc/zprofile`)
+   - **fish** → `/etc/fish/conf.d/dynmotd.fish` (login-only guard)
 4. Create `/etc/dynmotd.conf` for user exclusion
 5. Create `/etc/dynmotd.d/` for custom scripts
-6. Auto-detect OS and cloud provider, installing appropriate modules
+6. Install all cloud modules (detection happens at runtime, not install time)
+7. Auto-detect OS-specific modules (Raspberry Pi, RHEL/Rocky tuned-adm)
 
 ### Manual Installation
 
@@ -88,17 +97,44 @@ sudo ./uninstall.sh
 
 ## Configuration
 
-### Excluding Users
+### Disabling the MOTD
 
-Edit `/etc/dynmotd.conf` to exclude users from seeing the MOTD:
+Two mechanisms exist — admin-wide and per-user.
+
+**Admin exclusion** (requires root) — manages `/etc/dynmotd.conf`:
 
 ```bash
-# /etc/dynmotd.conf
-# Add one username per line
-root
-serviceaccount
-jenkins
+sudo dynmotd-exclude add jenkins
+sudo dynmotd-exclude add serviceaccount
+sudo dynmotd-exclude list
+sudo dynmotd-exclude remove jenkins
 ```
+
+Or edit `/etc/dynmotd.conf` directly (one username per line, `#` for comments).
+
+**Self opt-out** (any user) — toggles `~/.dynmotd-disable`:
+
+```bash
+dynmotd-exclude mute      # disable MOTD for yourself
+dynmotd-exclude unmute    # re-enable
+dynmotd-exclude status    # check current state
+```
+
+Either mechanism suppresses the MOTD for the matching user.
+
+### Broadcast Notices
+
+Use `dynmotd-notify` (installed alongside `dynmotd`) to show sysadmin messages to every user at login:
+
+```bash
+sudo dynmotd-notify add "maintenance tonight at 20:00"
+sudo dynmotd-notify add --expires 2026-05-01 "freeze until May 1"
+sudo dynmotd-notify list
+sudo dynmotd-notify remove 20260418-093512-42
+sudo dynmotd-notify clear
+```
+
+Notices are stored as plain-text files in `/var/lib/dynmotd/notices/` and auto-hidden past their optional expiration date.
 
 ### Custom Scripts
 
@@ -135,23 +171,27 @@ fi
 | **GCP** | Metadata header | External IP, Project, Machine Type, Image, VPC, Zone, Scopes |
 | **OpenStack** | `/openstack/` endpoint | External IP, Instance ID/Type, Hostname, Project, Zone |
 
-All cloud metadata requests have a **2-second timeout** to prevent delays.
+Detection runs **at login time**, not at install — snapshotted/migrated VMs automatically pick up the new provider. A non-cloud host pays only ~1s (single reachability probe) at login. All cloud metadata requests have a 2-second timeout.
 
 ## Project Structure
 
 ```
 dynmotd/
 ├── dynmotd              # Main script
+├── dynmotd-notify       # CLI for broadcast notices
+├── dynmotd-exclude      # CLI for per-user MOTD opt-out / admin exclusion
 ├── install.sh           # Installation script
 ├── uninstall.sh         # Uninstallation script
+├── 00_cloud_detect.sh   # Runtime cloud-provider detection (shared)
+├── 00_notices.sh        # Displays sysadmin notices at login
 ├── 00_raspberry_pi.sh   # Raspberry Pi module
 ├── 00_rhel.sh           # RHEL/Oracle Linux module
 ├── 00_rocky.sh          # Rocky Linux module
 ├── 00_wsl.sh            # Windows Subsystem for Linux module
-├── 01_aws.sh            # AWS EC2 metadata
-├── 01_azure.sh          # Azure VM metadata
-├── 01_gcp.sh            # GCP Compute Engine metadata
-├── 01_openstack.sh      # OpenStack metadata
+├── 01_aws.sh            # AWS EC2 metadata (self-gated)
+├── 01_azure.sh          # Azure VM metadata (self-gated)
+├── 01_gcp.sh            # GCP Compute Engine metadata (self-gated)
+├── 01_openstack.sh      # OpenStack metadata (self-gated)
 ├── 99_fortune.sh        # Fortune quotes
 └── example/             # Example configurations
 ```
@@ -201,7 +241,12 @@ This project is a fork of [Neutrollized/dynmotd](https://github.com/Neutrollized
 - Distribution-specific color coding based on official logo colors
 - OpenStack cloud provider support
 - Rocky Linux and Alpine Linux support
-- User exclusion configuration (`/etc/dynmotd.conf`)
+- Runtime cloud detection (works on snapshotted/migrated VMs)
+- Multi-shell login hooks (bash, zsh, fish)
+- Broadcast notices system (`dynmotd-notify`)
+- Per-user and admin MOTD exclusion (`dynmotd-exclude`)
+- Virtualization, disk, last-login rows
+- `NO_COLOR` / non-TTY color suppression
 - Exported color variables for custom scripts
 - Timeout on all cloud metadata requests
 - Improved error handling and code consistency
