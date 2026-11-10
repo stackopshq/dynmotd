@@ -1,0 +1,27 @@
+# Merge request checks on GitLab, where the code now lives (moved from Gitea on
+# 2026-11-10). GitHub stays a public mirror pushed from here, and publishing
+# (releases, registries) stays on GitHub Actions there: this pipeline only
+# checks, and never publishes.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    # No branch pipeline on top of an MR pipeline for the same commit.
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
+stages:
+  - verify
+
+default:
+  tags: [linux]
+  interruptible: true
+  timeout: 20m
+
+shellcheck:
+  stage: verify
+  image: docker.io/koalaman/shellcheck-alpine:v0.11.0
+  script:
+    - find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 -r shellcheck -e SC1090
